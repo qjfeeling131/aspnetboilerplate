@@ -1,7 +1,9 @@
 ﻿using System;
+using System.Globalization;
 using System.Threading.Tasks;
 using Abp.AspNetCore.App.Models;
 using Abp.AspNetCore.Mvc.Controllers;
+using Abp.Timing;
 using Abp.UI;
 using Abp.Web.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +20,16 @@ namespace Abp.AspNetCore.App.Controllers
         public JsonResult SimpleJson()
         {
             return Json(new SimpleViewModel("Forty Two", 42));
+        }
+
+        public ObjectResult SimpleObject()
+        {
+            return new ObjectResult(new SimpleViewModel("Forty Two", 42));
+        }
+
+        public string SimpleString()
+        {
+            return "test";
         }
 
         public JsonResult SimpleJsonException(string message, bool userFriendly)
@@ -46,7 +58,7 @@ namespace Abp.AspNetCore.App.Controllers
         [WrapResult]
         public void GetVoidTest()
         {
-            
+
         }
 
         [DontWrapResult]
@@ -62,24 +74,100 @@ namespace Abp.AspNetCore.App.Controllers
         }
 
         [HttpGet]
-        public async Task<ActionResult> GetActionResultTestAsync()
+        public async Task<ActionResult> GetActionResultTest2()
         {
             await Task.Delay(0);
             return Content("GetActionResultTestAsync-Result");
         }
 
         [HttpGet]
-        public async Task GetVoidExceptionTestAsync()
+        public async Task GetVoidExceptionTest()
         {
             await Task.Delay(0);
             throw new UserFriendlyException("GetVoidExceptionTestAsync-Exception");
         }
 
         [HttpGet]
-        public async Task<ActionResult> GetActionResultExceptionTestAsync()
+        public async Task<ActionResult> GetActionResultExceptionTest()
         {
             await Task.Delay(0);
             throw new UserFriendlyException("GetActionResultExceptionTestAsync-Exception");
+        }
+
+        [HttpGet]
+        public ActionResult GetCurrentCultureNameTest()
+        {
+            return Content(CultureInfo.CurrentCulture.Name);
+        }
+
+        [HttpGet]
+        public string GetDateTimeKind(SimpleDateModel input)
+        {
+            return input.Date.Kind.ToString().ToLower();
+        }
+
+        [HttpGet]
+        public string GetNotNormalizedDateTimeKindProperty(SimpleDateModel2 input)
+        {
+            return input.Date.Kind.ToString();
+        }
+
+
+        [HttpGet]
+        public SimpleDateModel2 GetNotNormalizedDateTimeKindProperty2(string date)
+        {
+            return new SimpleDateModel2
+            {
+                Date = Convert.ToDateTime(date)
+            };
+        }
+
+        [HttpGet]
+        public SimpleDateModel3 GetNotNormalizedDateTimeKindProperty3(string date)
+        {
+            return new SimpleDateModel3
+            {
+                Date = Convert.ToDateTime(date)
+            };
+        }
+
+        [HttpGet]
+        public SimpleDateModel4 GetNotNormalizedDateTimeKindProperty4([DisableDateTimeNormalization]DateTime date)
+        {
+            return new SimpleDateModel4
+            {
+                Date = date
+            };
+        }
+
+        [HttpGet]
+        public string GetNotNormalizedDateTimeKindClass(SimpleDateModel3 input)
+        {
+            return input.Date.Kind.ToString().ToLower();
+        }
+
+        [HttpGet]
+        public string GetSimpleTypeDateTimeKind(DateTime date)
+        {
+            return date.Date.Kind.ToString().ToLower();
+        }
+
+        [HttpGet]
+        public string GetNotNormalizedSimpleTypeKind([DisableDateTimeNormalization]DateTime date)
+        {
+            return date.Date.Kind.ToString().ToLower();
+        }
+
+        [HttpGet]
+        public string GetNullableSimpleTypeDateTimeKind(DateTime? date)
+        {
+            return date.Value.Kind.ToString().ToLower();
+        }
+
+        [HttpGet]
+        public string GetNotNormalizedNullableSimpleTypeDateTimeKind([DisableDateTimeNormalization]DateTime? date)
+        {
+            return date.Value.Date.Kind.ToString().ToLower();
         }
     }
 }

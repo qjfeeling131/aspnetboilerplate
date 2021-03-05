@@ -1,6 +1,10 @@
 ﻿using System;
+using System.Reflection;
 using System.Threading.Tasks;
 using Abp.Dependency;
+using Abp.Domain.Uow;
+using Abp.Events.Bus;
+using Abp.Events.Bus.Exceptions;
 using Abp.Json;
 using Abp.Threading;
 using Abp.Threading.BackgroundWorkers;
@@ -15,6 +19,8 @@ namespace Abp.BackgroundJobs
     /// </summary>
     public class BackgroundJobManager : PeriodicBackgroundWorkerBase, IBackgroundJobManager, ISingletonDependency
     {
+        public IEventBus EventBus { get; set; }
+        
         /// <summary>
         /// Interval between polling jobs from <see cref="IBackgroundJobStore"/>.
         /// Default value: 5000 (5 seconds).
@@ -41,10 +47,13 @@ namespace Abp.BackgroundJobs
             _store = store;
             _iocResolver = iocResolver;
 
+            EventBus = NullEventBus.Instance;
+
             Timer.Period = JobPollPeriod;
         }
 
-        public async Task EnqueueAsync<TJob, TArgs>(TArgs args, BackgroundJobPriority priority = BackgroundJobPriority.Normal, TimeSpan? delay = null)
+        [UnitOfWork]
+        public virtual async Task<string> EnqueueAsync<TJob, TArgs>(TArgs args, BackgroundJobPriority priority = BackgroundJobPriority.Normal, TimeSpan? delay = null)
             where TJob : IBackgroundJob<TArgs>
         {
             var jobInfo = new BackgroundJobInfo
@@ -60,11 +69,62 @@ namespace Abp.BackgroundJobs
             }
 
             await _store.InsertAsync(jobInfo);
+            await CurrentUnitOfWork.SaveChangesAsync();
+
+            return jobInfo.Id.ToString();
+        }
+
+        [UnitOfWork]
+        public virtual string Enqueue<TJob, TArgs>(TArgs args, BackgroundJobPriority priority = BackgroundJobPriority.Normal, TimeSpan? delay = null)
+            where TJob : IBackgroundJob<TArgs>
+        {
+            var jobInfo = new BackgroundJobInfo
+            {
+                JobType = typeof(TJob).AssemblyQualifiedName,
+                JobArgs = args.ToJsonString(),
+                Priority = priority
+            };
+
+            if (delay.HasValue)
+            {
+                jobInfo.NextTryTime = Clock.Now.Add(delay.Value);
+            }
+
+            _store.Insert(jobInfo);
+            CurrentUnitOfWork.SaveChanges();
+
+            return jobInfo.Id.ToString();
+        }
+
+        public async Task<bool> DeleteAsync(string jobId)
+        {
+            if (long.TryParse(jobId, out long finalJobId) == false)
+            {
+                throw new ArgumentException($"The jobId '{jobId}' should be a number.", nameof(jobId));
+            }
+
+            BackgroundJobInfo jobInfo = await _store.GetAsync(finalJobId);
+
+            await _store.DeleteAsync(jobInfo);
+            return true;
+        }
+
+        public bool Delete(string jobId)
+        {
+            if (long.TryParse(jobId, out long finalJobId) == false)
+            {
+                throw new ArgumentException($"The jobId '{jobId}' should be a number.", nameof(jobId));
+            }
+
+            BackgroundJobInfo jobInfo = _store.Get(finalJobId);
+
+            _store.Delete(jobInfo);
+            return true;
         }
 
         protected override void DoWork()
         {
-            var waitingJobs = AsyncHelper.RunSync(() => _store.GetWaitingJobsAsync(1000));
+            var waitingJobs = _store.GetWaitingJobs(1000);
 
             foreach (var job in waitingJobs)
             {
@@ -84,13 +144,13 @@ namespace Abp.BackgroundJobs
                 {
                     try
                     {
-                        var jobExecuteMethod = job.Object.GetType().GetMethod("Execute");
+                        var jobExecuteMethod = job.Object.GetType().GetTypeInfo().GetMethod("Execute");
                         var argsType = jobExecuteMethod.GetParameters()[0].ParameterType;
                         var argsObj = JsonConvert.DeserializeObject(jobInfo.JobArgs, argsType);
 
                         jobExecuteMethod.Invoke(job.Object, new[] { argsObj });
 
-                        AsyncHelper.RunSync(() => _store.DeleteAsync(jobInfo));
+                        _store.Delete(jobInfo);
                     }
                     catch (Exception ex)
                     {
@@ -107,6 +167,20 @@ namespace Abp.BackgroundJobs
                         }
 
                         TryUpdate(jobInfo);
+
+                        EventBus.Trigger(
+                            this,
+                            new AbpHandledExceptionData(
+                                new BackgroundJobException(
+                                    "A background job execution is failed. See inner exception for details. See BackgroundJob property to get information on the background job.", 
+                                    ex
+                                    )
+                                {
+                                    BackgroundJob = jobInfo,
+                                    JobObject = job.Object
+                                }
+                            )
+                        );
                     }
                 }
             }
@@ -124,7 +198,7 @@ namespace Abp.BackgroundJobs
         {
             try
             {
-                _store.UpdateAsync(jobInfo);
+                _store.Update(jobInfo);
             }
             catch (Exception updateEx)
             {

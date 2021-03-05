@@ -7,6 +7,7 @@ using Abp.Events.Bus;
 using Abp.Events.Bus.Exceptions;
 using Abp.UI;
 using Abp.Web.Models;
+using Microsoft.AspNetCore.Localization;
 using Shouldly;
 using Xunit;
 
@@ -163,7 +164,7 @@ namespace Abp.AspNetCore.Tests
             // Act
             var response = await GetResponseAsStringAsync(
                 GetUrl<SimpleTestController>(
-                    nameof(SimpleTestController.GetActionResultTestAsync)
+                    nameof(SimpleTestController.GetActionResultTest2)
                 ));
 
             //Assert
@@ -176,7 +177,7 @@ namespace Abp.AspNetCore.Tests
             // Act
             var response = await GetResponseAsObjectAsync<AjaxResponse>(
                 GetUrl<SimpleTestController>(
-                    nameof(SimpleTestController.GetVoidExceptionTestAsync)
+                    nameof(SimpleTestController.GetVoidExceptionTest)
                 ), HttpStatusCode.InternalServerError);
 
             response.Error.ShouldNotBeNull();
@@ -192,9 +193,24 @@ namespace Abp.AspNetCore.Tests
             {
                 await GetResponseAsStringAsync(
                     GetUrl<SimpleTestController>(
-                        nameof(SimpleTestController.GetActionResultExceptionTestAsync)
+                        nameof(SimpleTestController.GetActionResultExceptionTest)
                     ), HttpStatusCode.InternalServerError);
             })).Message.ShouldBe("GetActionResultExceptionTestAsync-Exception");
         }
+
+        [Fact]
+        public async Task AbpLocalizationHeaderRequestCultureProvider_Test()
+        {
+            //Arrange
+            Client.DefaultRequestHeaders.Add(CookieRequestCultureProvider.DefaultCookieName, "c=it|uic=it");
+
+            var culture = await GetResponseAsStringAsync(
+                    GetUrl<SimpleTestController>(
+                        nameof(SimpleTestController.GetCurrentCultureNameTest)
+                    ));
+
+            culture.ShouldBe("it");
+        }
+
     }
 }

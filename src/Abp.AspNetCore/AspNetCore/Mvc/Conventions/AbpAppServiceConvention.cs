@@ -3,17 +3,18 @@ using System.Collections.Generic;
 using Abp.Application.Services;
 using Abp.AspNetCore.Configuration;
 using Abp.Extensions;
-using Abp.MsDependencyInjection.Extensions;
+using Castle.Windsor.MsDependencyInjection;
 using Abp.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApplicationModels;
-using Microsoft.AspNetCore.Mvc.Internal;
 using Microsoft.Extensions.DependencyInjection;
 using System.Linq;
+using System.Reflection;
 using Abp.Collections.Extensions;
 using Abp.Web.Api.ProxyScripting.Generators;
 using JetBrains.Annotations;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
+using Microsoft.AspNetCore.Mvc.ActionConstraints;
 
 namespace Abp.AspNetCore.Mvc.Conventions
 {
@@ -39,23 +40,40 @@ namespace Abp.AspNetCore.Mvc.Conventions
                 var type = controller.ControllerType.AsType();
                 var configuration = GetControllerSettingOrNull(type);
 
-                if (typeof(IApplicationService).IsAssignableFrom(type))
+                if (typeof(IApplicationService).GetTypeInfo().IsAssignableFrom(type))
                 {
                     controller.ControllerName = controller.ControllerName.RemovePostFix(ApplicationService.CommonPostfixes);
                     configuration?.ControllerModelConfigurer(controller);
 
+                    ConfigureCacheControl(controller, _configuration.Value.DefaultResponseCacheAttributeForAppServices);
                     ConfigureArea(controller, configuration);
                     ConfigureRemoteService(controller, configuration);
                 }
                 else
                 {
-                    var remoteServiceAtt = ReflectionHelper.GetSingleAttributeOrDefault<RemoteServiceAttribute>(type);
+                    var remoteServiceAtt = ReflectionHelper.GetSingleAttributeOrDefault<RemoteServiceAttribute>(type.GetTypeInfo());
                     if (remoteServiceAtt != null && remoteServiceAtt.IsEnabledFor(type))
                     {
+                        ConfigureCacheControl(controller, _configuration.Value.DefaultResponseCacheAttributeForControllers);
                         ConfigureRemoteService(controller, configuration);
                     }
                 }
             }
+        }
+
+        private void ConfigureCacheControl(ControllerModel controller, ResponseCacheAttribute responseCacheAttribute)
+        {
+            if (responseCacheAttribute == null)
+            {
+                return;
+            }
+
+            if (controller.Filters.Any(filter => typeof(ResponseCacheAttribute).IsAssignableFrom(filter.GetType())))
+            {
+                return;
+            }
+
+            controller.Filters.Add(responseCacheAttribute);
         }
 
         private void ConfigureArea(ControllerModel controller, [CanBeNull] AbpControllerAssemblySetting configuration)
@@ -144,7 +162,7 @@ namespace Abp.AspNetCore.Mvc.Conventions
             if (controller.ApiExplorer.IsVisible == null)
             {
                 var controllerType = controller.ControllerType.AsType();
-                var remoteServiceAtt = ReflectionHelper.GetSingleAttributeOrDefault<RemoteServiceAttribute>(controllerType);
+                var remoteServiceAtt = ReflectionHelper.GetSingleAttributeOrDefault<RemoteServiceAttribute>(controllerType.GetTypeInfo());
                 if (remoteServiceAtt != null)
                 {
                     controller.ApiExplorer.IsVisible =
@@ -198,6 +216,12 @@ namespace Abp.AspNetCore.Mvc.Conventions
         {
             RemoveEmptySelectors(action.Selectors);
 
+            var remoteServiceAtt = ReflectionHelper.GetSingleAttributeOrDefault<RemoteServiceAttribute>(action.ActionMethod);
+            if (remoteServiceAtt != null && !remoteServiceAtt.IsEnabledFor(action.ActionMethod))
+            {
+                return;
+            }
+
             if (!action.Selectors.Any())
             {
                 AddAbpServiceSelector(moduleName, controllerName, action, configuration);
@@ -248,7 +272,8 @@ namespace Abp.AspNetCore.Mvc.Conventions
         [CanBeNull]
         private AbpControllerAssemblySetting GetControllerSettingOrNull(Type controllerType)
         {
-            return _configuration.Value.ControllerAssemblySettings.GetSettingOrNull(controllerType);
+            var settings = _configuration.Value.ControllerAssemblySettings.GetSettings(controllerType);
+            return settings.FirstOrDefault(setting => setting.TypePredicate(controllerType));
         }
 
         private static AttributeRouteModel CreateAbpServiceAttributeRouteModel(string moduleName, string controllerName, ActionModel action)

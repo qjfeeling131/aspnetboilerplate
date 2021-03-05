@@ -1,5 +1,8 @@
 ﻿using System;
+using System.Reflection;
+using System.Threading.Tasks;
 using Abp.Dependency;
+using Abp.Domain.Uow;
 using Abp.Modules;
 using Abp.Runtime.Session;
 using Abp.TestBase.Runtime.Session;
@@ -9,7 +12,7 @@ namespace Abp.TestBase
     /// <summary>
     /// This is the base class for all tests integrated to ABP.
     /// </summary>
-    public abstract class AbpIntegratedTestBase<TStartupModule> : IDisposable 
+    public abstract class AbpIntegratedTestBase<TStartupModule> : IDisposable
         where TStartupModule : AbpModule
     {
         /// <summary>
@@ -24,10 +27,14 @@ namespace Abp.TestBase
         /// </summary>
         protected TestAbpSession AbpSession { get; private set; }
 
-        protected AbpIntegratedTestBase(bool initializeAbp = true)
+        protected AbpIntegratedTestBase(bool initializeAbp = true, IIocManager localIocManager = null)
         {
-            LocalIocManager = new IocManager();
-            AbpBootstrapper = AbpBootstrapper.Create<TStartupModule>(LocalIocManager);
+            LocalIocManager = localIocManager ?? new IocManager();
+
+            AbpBootstrapper = AbpBootstrapper.Create<TStartupModule>(options =>
+            {
+                options.IocManager = LocalIocManager;
+            });
 
             if (initializeAbp)
             {
@@ -37,11 +44,13 @@ namespace Abp.TestBase
 
         protected void InitializeAbp()
         {
-            LocalIocManager.Register<IAbpSession, TestAbpSession>();
+            LocalIocManager.RegisterIfNot<IAbpSession, TestAbpSession>();
 
             PreInitialize();
 
             AbpBootstrapper.Initialize();
+
+            PostInitialize();
 
             AbpSession = LocalIocManager.Resolve<TestAbpSession>();
         }
@@ -50,6 +59,14 @@ namespace Abp.TestBase
         /// This method can be overrided to replace some services with fakes.
         /// </summary>
         protected virtual void PreInitialize()
+        {
+
+        }
+
+        /// <summary>
+        /// This method can be overrided to replace some services with fakes.
+        /// </summary>
+        protected virtual void PostInitialize()
         {
 
         }
@@ -119,12 +136,66 @@ namespace Abp.TestBase
         {
             if (!LocalIocManager.IsRegistered(type))
             {
-                if (!type.IsClass || type.IsAbstract)
+                if (!type.GetTypeInfo().IsClass || type.GetTypeInfo().IsAbstract)
                 {
                     throw new AbpException("Can not register " + type.Name + ". It should be a non-abstract class. If not, it should be registered before.");
                 }
 
                 LocalIocManager.Register(type, lifeStyle);
+            }
+        }
+
+        protected virtual void WithUnitOfWork(Action action, UnitOfWorkOptions options = null)
+        {
+            using (var uowManager = LocalIocManager.ResolveAsDisposable<IUnitOfWorkManager>())
+            {
+                using (var uow = uowManager.Object.Begin(options ?? new UnitOfWorkOptions()))
+                {
+                    action();
+                    uow.Complete();
+                }
+            }
+        }
+
+        protected virtual void WithUnitOfWork(int? tenantId, Action action, UnitOfWorkOptions options = null)
+        {
+            using (var uowManager = LocalIocManager.ResolveAsDisposable<IUnitOfWorkManager>())
+            {
+                using (var uow = uowManager.Object.Begin(options ?? new UnitOfWorkOptions()))
+                {
+                    using (uowManager.Object.Current.SetTenantId(tenantId))
+                    {
+                        action();
+                        uow.Complete();
+                    }
+                }
+            }
+        }
+
+        protected virtual async Task WithUnitOfWorkAsync(Func<Task> action, UnitOfWorkOptions options = null)
+        {
+            using (var uowManager = LocalIocManager.ResolveAsDisposable<IUnitOfWorkManager>())
+            {
+                using (var uow = uowManager.Object.Begin(options ?? new UnitOfWorkOptions()))
+                {
+                    await action();
+                    uow.Complete();
+                }
+            }
+        }
+
+        protected async Task WithUnitOfWorkAsync(int? tenantId, Func<Task> action, UnitOfWorkOptions options = null)
+        {
+            using (var uowManager = LocalIocManager.ResolveAsDisposable<IUnitOfWorkManager>())
+            {
+                using (var uow = uowManager.Object.Begin(options ?? new UnitOfWorkOptions()))
+                {
+                    using (uowManager.Object.Current.SetTenantId(tenantId))
+                    {
+                        await action();
+                        uow.Complete();
+                    }
+                }
             }
         }
     }

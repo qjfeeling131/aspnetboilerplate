@@ -1,5 +1,5 @@
 ﻿using System.Linq;
-using System.Linq.Dynamic;
+using System.Linq.Dynamic.Core;
 using Abp.Application.Services.Dto;
 using Abp.Authorization;
 using Abp.Domain.Entities;
@@ -21,11 +21,15 @@ namespace Abp.Application.Services
     {
         protected readonly IRepository<TEntity, TPrimaryKey> Repository;
 
-        protected string GetPermission { get; set; }
-        protected string GetAllPermission { get; set; }
-        protected string CreatePermission { get; set; }
-        protected string UpdatePermission { get; set; }
-        protected string DeletePermission { get; set; }
+        protected virtual string GetPermissionName { get; set; }
+
+        protected virtual string GetAllPermissionName { get; set; }
+
+        protected virtual string CreatePermissionName { get; set; }
+
+        protected virtual string UpdatePermissionName { get; set; }
+
+        protected virtual string DeletePermissionName { get; set; }
 
         protected CrudAppServiceBase(IRepository<TEntity, TPrimaryKey> repository)
         {
@@ -97,7 +101,7 @@ namespace Abp.Application.Services
         }
 
         /// <summary>
-        /// Maps <see cref="TEntity"/> to <see cref="TEntityDto"/>.
+        /// Maps <typeparamref name="TEntity"/> to <typeparamref name="TEntityDto"/>.
         /// It uses <see cref="IObjectMapper"/> by default.
         /// It can be overrided for custom mapping.
         /// </summary>
@@ -107,7 +111,7 @@ namespace Abp.Application.Services
         }
 
         /// <summary>
-        /// Maps <see cref="TEntityDto"/> to <see cref="TEntity"/> to create a new entity.
+        /// Maps <typeparamref name="TEntityDto"/> to <typeparamref name="TEntity"/> to create a new entity.
         /// It uses <see cref="IObjectMapper"/> by default.
         /// It can be overrided for custom mapping.
         /// </summary>
@@ -117,7 +121,7 @@ namespace Abp.Application.Services
         }
 
         /// <summary>
-        /// Maps <see cref="TUpdateInput"/> to <see cref="TEntity"/> to update the entity.
+        /// Maps <typeparamref name="TUpdateInput"/> to <typeparamref name="TEntity"/> to update the entity.
         /// It uses <see cref="IObjectMapper"/> by default.
         /// It can be overrided for custom mapping.
         /// </summary>
@@ -136,27 +140,27 @@ namespace Abp.Application.Services
 
         protected virtual void CheckGetPermission()
         {
-            CheckPermission(GetPermission);
+            CheckPermission(GetPermissionName);
         }
 
         protected virtual void CheckGetAllPermission()
         {
-            CheckPermission(GetAllPermission);
+            CheckPermission(GetAllPermissionName);
         }
 
         protected virtual void CheckCreatePermission()
         {
-            CheckPermission(CreatePermission);
+            CheckPermission(CreatePermissionName);
         }
 
         protected virtual void CheckUpdatePermission()
         {
-            CheckPermission(UpdatePermission);
+            CheckPermission(UpdatePermissionName);
         }
 
         protected virtual void CheckDeletePermission()
         {
-            CheckPermission(DeletePermission);
+            CheckPermission(DeletePermissionName);
         }
     }
 }
